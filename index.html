@@ -1,0 +1,830 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Teachable Machine 手勢是非題小遊戲 (100題旗艦版)</title>
+  <!-- TensorFlow.js 與 Teachable Machine Library -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@latest/dist/teachablemachine-image.min.js"></script>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card-bg: #1e293b;
+      --text: #f8fafc;
+      --primary: #38bdf8;
+      --good-color: #22c55e;
+      --bad-color: #ef4444;
+      --warning-color: #f59e0b;
+      --neutral: #64748b;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+
+    body {
+      background-color: var(--bg);
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-height: 100vh;
+      padding: 24px 16px;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 20px;
+    }
+
+    h1 {
+      font-size: 1.8rem;
+      margin-bottom: 6px;
+      color: var(--primary);
+    }
+
+    header p {
+      color: #94a3b8;
+      font-size: 0.95rem;
+    }
+
+    .config-card, .game-card {
+      background: var(--card-bg);
+      padding: 20px 24px;
+      border-radius: 12px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+      width: 100%;
+      max-width: 640px;
+      margin-bottom: 20px;
+    }
+
+    .form-row {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+
+    .input-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    label {
+      font-size: 0.85rem;
+      color: #94a3b8;
+      font-weight: 500;
+    }
+
+    input[type="text"], select {
+      padding: 10px 14px;
+      border-radius: 6px;
+      border: 1px solid #334155;
+      background: #0f172a;
+      color: #fff;
+      font-size: 0.95rem;
+      outline: none;
+    }
+
+    input[type="text"]:focus, select:focus {
+      border-color: var(--primary);
+    }
+
+    .btn-row {
+      display: flex;
+      gap: 12px;
+    }
+
+    button {
+      background-color: var(--primary);
+      color: #0f172a;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 6px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    button:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+      filter: grayscale(1);
+    }
+
+    button:hover:not(:disabled) {
+      filter: brightness(1.1);
+    }
+
+    /* 遊戲儀表板 */
+    .game-stats {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      width: 100%;
+      padding-bottom: 14px;
+      border-bottom: 1px solid #334155;
+    }
+
+    .stat-item {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    .stat-label {
+      font-size: 0.75rem;
+      color: #94a3b8;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .stat-val {
+      font-size: 1.35rem;
+      font-weight: 800;
+    }
+
+    .val-score { color: var(--primary); }
+    .val-combo { color: var(--warning-color); }
+    .val-timer { color: #f43f5e; }
+
+    .game-area {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+      margin-top: 14px;
+    }
+
+    .webcam-container {
+      position: relative;
+      width: 260px;
+      height: 260px;
+      border-radius: 12px;
+      overflow: hidden;
+      border: 3px solid #334155;
+      background: #000;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+
+    .webcam-container canvas {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      transform: scaleX(-1);
+    }
+
+    .prediction-badges {
+      display: flex;
+      gap: 10px;
+    }
+
+    .badge {
+      padding: 5px 12px;
+      border-radius: 20px;
+      background: #334155;
+      font-size: 0.8rem;
+      font-weight: 500;
+      transition: background 0.15s, color 0.15s;
+    }
+
+    .badge.active-good {
+      background: var(--good-color);
+      color: #052e16;
+      font-weight: 700;
+    }
+
+    .badge.active-bad {
+      background: var(--bad-color);
+      color: #450a0a;
+      font-weight: 700;
+    }
+
+    .question-box {
+      width: 100%;
+      background: #0f172a;
+      border-radius: 8px;
+      padding: 18px;
+      text-align: center;
+      box-shadow: inset 0 2px 4px rgba(0,0,0,0.3);
+    }
+
+    .q-meta {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.8rem;
+      color: #94a3b8;
+      margin-bottom: 6px;
+    }
+
+    .q-text {
+      font-size: 1.15rem;
+      font-weight: 600;
+      margin: 12px 0 16px 0;
+      min-height: 52px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      line-height: 1.45;
+    }
+
+    /* 倒數計時條 */
+    .timer-bar-container {
+      width: 100%;
+      height: 6px;
+      background: #1e293b;
+      border-radius: 3px;
+      overflow: hidden;
+      margin-bottom: 12px;
+    }
+
+    .timer-bar {
+      height: 100%;
+      width: 100%;
+      background-color: var(--primary);
+      transition: width 0.1s linear, background-color 0.3s;
+    }
+
+    /* 手勢蓄力條 (Hold to Confirm) */
+    .progress-bar-container {
+      width: 100%;
+      height: 10px;
+      background: #334155;
+      border-radius: 5px;
+      overflow: hidden;
+    }
+
+    .progress-bar {
+      height: 100%;
+      width: 0%;
+      transition: width 0.05s linear;
+    }
+
+    .progress-good { background-color: var(--good-color); }
+    .progress-bad { background-color: var(--bad-color); }
+
+    .status-msg {
+      font-size: 0.95rem;
+      font-weight: 500;
+      min-height: 28px;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <h1>是非題手勢小遊戲</h1>
+    <p>比出 👍 <b>Good</b>（正確）或 👎 <b>Bad</b>（錯誤） | 蓄力 1.2 秒確認答案</p>
+  </header>
+
+  <!-- 模型與題庫分類設定 -->
+  <section class="config-card">
+    <div class="form-row">
+      <div class="input-group">
+        <label for="modelUrl">Teachable Machine 模型網址：</label>
+        <input type="text" id="modelUrl" value="https://teachablemachine.withgoogle.com/models/WNUGvHZLk/">
+      </div>
+      <div class="input-group">
+        <label for="categorySelect">選擇題目分類：</label>
+        <select id="categorySelect">
+          <option value="all">全部混合 (100題隨機抽5題)</option>
+          <option value="life">生活常識與健康 (25題)</option>
+          <option value="science">通識地理與科普 (25題)</option>
+          <option value="english">實用英文與文法 (25題)</option>
+          <option value="math">基礎數學與邏輯 (25題)</option>
+        </select>
+      </div>
+    </div>
+    <div class="btn-row">
+      <button id="loadBtn">啟動相機並開始遊戲</button>
+      <button id="stopBtn" disabled>停止相機</button>
+    </div>
+  </section>
+
+  <!-- 遊戲主體區域 -->
+  <section class="game-card">
+    <div class="game-stats">
+      <div class="stat-item">
+        <span class="stat-label">累積得分</span>
+        <span class="stat-val val-score" id="scoreEl">0</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-label">連續答對 (Combo)</span>
+        <span class="stat-val val-combo" id="comboEl">0</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-label">剩餘時間</span>
+        <span class="stat-val val-timer" id="timerEl">10s</span>
+      </div>
+    </div>
+
+    <div class="game-area">
+      <div class="webcam-container" id="webcamContainer">
+        <span id="camPlaceholder" style="color: #64748b; font-size: 0.85rem;">鏡頭未啟動</span>
+      </div>
+
+      <div class="prediction-badges">
+        <span id="badgeGood" class="badge">Good: 0%</span>
+        <span id="badgeDefault" class="badge">Default: 0%</span>
+        <span id="badgeBad" class="badge">Bad: 0%</span>
+      </div>
+
+      <div class="question-box">
+        <div class="timer-bar-container">
+          <div id="timerBar" class="timer-bar"></div>
+        </div>
+
+        <div class="q-meta">
+          <span id="qCategory">類別: -</span>
+          <span id="qNumber">尚未開始</span>
+        </div>
+        <div class="q-text" id="qText">請選擇類別並啟動模型以開始測驗！</div>
+        
+        <div class="progress-bar-container">
+          <div id="progressBar" class="progress-bar"></div>
+        </div>
+      </div>
+
+      <div class="status-msg" id="statusMsg">等待啟動...</div>
+    </div>
+  </section>
+
+  <script>
+    // ==========================================
+    // 完整 100 題分類題庫池
+    // ==========================================
+    const QUESTION_BANK = {
+      life: [
+        { q: "將香蕉與蘋果放在同一個紙袋內，會加速香蕉成熟？", a: true, cat: "生活常識" },
+        { q: "微波爐內可以放入不鏽鋼或鋁箔等金屬容器加熱？", a: false, cat: "生活常識" },
+        { q: "深綠色蔬菜在烹煮時加白醋，會使葉綠素更加鮮綠？", a: false, cat: "生活常識" },
+        { q: "吃完大蒜後飲用全脂牛奶，有助於減輕口腔中的蒜味？", a: true, cat: "生活常識" },
+        { q: "蜂蜜若純度夠高且密封良好，在常溫下幾乎不會腐壞？", a: true, cat: "生活常識" },
+        { q: "剛煮沸滾燙的熱湯應該立即放入冰箱以防細菌滋生？", a: false, cat: "生活常識" },
+        { q: "電池在低溫環境（如冰點以下）蓄電量表現通常比常溫更持久？", a: false, cat: "生活常識" },
+        { q: "用冷水沖洗生雞肉是避免沙門氏菌污染環境的最佳衛生習慣？", a: false, cat: "生活常識" },
+        { q: "番茄煮熟後食用，人體對茄紅素（Lycopene）的吸收率會提高？", a: true, cat: "生活常識" },
+        { q: "中暑患者應立即飲用大量純蒸餾水以快速補充水分？", a: false, cat: "生活常識" },
+        { q: "長時間盯螢幕導致眼睛乾澀時，刻意增加眨眼頻率有助緩解？", a: true, cat: "生活常識" },
+        { q: "未煮熟的四季豆（敏豆）含有皂苷，生食可能引起腸胃不適？", a: true, cat: "生活常識" },
+        { q: "發芽的馬鈴薯只要將芽眼切除乾淨，剩餘部分便可安全食用？", a: false, cat: "生活常識" },
+        { q: "塗抹防曬乳後，人體仍可在日照下自行合成維生素 D？", a: true, cat: "生活常識" },
+        { q: "鋁箔紙通常亮面受熱反射率較高，包裹食材烘烤時建議霧面向外？", a: true, cat: "生活常識" },
+        { q: "咖啡因利尿，因此喝一杯美式黑咖啡完全等同於流失水分？", a: false, cat: "生活常識" },
+        { q: "發霉的吐司只要切除肉眼可見的發霉部位，其餘部分即可食用？", a: false, cat: "生活常識" },
+        { q: "被虎頭蜂螫傷時，應用酸性液體（如白醋）中和毒液？", a: false, cat: "生活常識" },
+        { q: "羽絨衣清洗後應直接置於強烈陽光下曝曬以迅速殺菌？", a: false, cat: "生活常識" },
+        { q: "保溫瓶內不建議長時間盛裝牛奶、豆漿或碳酸飲料？", a: false, cat: "生活常識" },
+        { q: "隱形眼鏡可以用一般的自來水或礦泉水暫時浸泡保存？", a: false, cat: "生活常識" },
+        { q: "睡眠週期通常以約 90 分鐘為一個循環單位？", a: true, cat: "生活常識" },
+        { q: "木質砧板清洗後應平放在檯面上自然風乾？", a: false, cat: "生活常識" },
+        { q: "吃巧克力會引起狗狗中毒，主要是因為含有「可可鹼」？", a: true, cat: "生活常識" },
+        { q: "發生輕微燙傷時，第一處理原則是「沖」流動冷水 15~30 分鐘？", a: true, cat: "生活常識" }
+      ],
+      science: [
+        { q: "澳洲的首都（Capital city）是雪梨（Sydney）？", a: false, cat: "地理科普" },
+        { q: "企鵝原生分布於南半球，北極野生環境中沒有企鵝生活？", a: true, cat: "自然科學" },
+        { q: "光年（Light-year）在天文學上是用於計量「時間」的單位？", a: false, cat: "天文科學" },
+        { q: "地球大氣層中含量最多的氣體成分是氮氣（Nitrogen）？", a: true, cat: "自然科學" },
+        { q: "赤道地區是地球上自轉線速度最快的地方？", a: true, cat: "地理天文" },
+        { q: "珠穆朗瑪峰（聖母峰）位於安地斯山脈？", a: false, cat: "地理科普" },
+        { q: "月球本身不會發光，我們看到的月光是反射太陽光？", a: true, cat: "天文科學" },
+        { q: "世界上流域面積與流量最大的河流是亞馬遜河？", a: true, cat: "地理科普" },
+        { q: "金星（Venus）是太陽系中表面平均溫度最高的一顆行星？", a: true, cat: "天文科學" },
+        { q: "死海（Dead Sea）因鹽度過高且地勢低窪，在地理學上屬於淡水湖？", a: false, cat: "地理科普" },
+        { q: "聲音在真空環境中的傳播速度比在空氣中更快？", a: false, cat: "物理科學" },
+        { q: "非洲大陸面積最大的國家是阿爾及利亞（Algeria）？", a: true, cat: "地理科普" },
+        { q: "日全食發生時，月球的位置剛好位於太陽與地球之間？", a: true, cat: "天文科學" },
+        { q: "水在海平面一大氣壓下的最大密度約出現在攝氏 4 度？", a: true, cat: "物理化學" },
+        { q: "地球自轉的方向是由東向西自轉？", a: false, cat: "地理天文" },
+        { q: "台灣海峽屬於太平洋板塊與歐亞板塊的交界處？", a: false, cat: "地理地質" },
+        { q: "鑽石（金剛石）與鉛筆芯（石墨）均由碳元素（Carbon）組成？", a: true, cat: "化學科普" },
+        { q: "格陵蘭島（Greenland）是目前地球上面積最大的島嶼？", a: true, cat: "地理科普" },
+        { q: "颱風（熱帶氣旋）在南半球的旋轉方向呈逆時針旋轉？", a: false, cat: "氣象科普" },
+        { q: "太陽系中體積最大的行星是木星（Jupiter）？", a: true, cat: "天文科學" },
+        { q: "冰島（Iceland）境內有許多活火山與地熱景觀？", a: true, cat: "地理地質" },
+        { q: "水銀（汞）是常溫常壓下唯一呈現液態的金屬元素？", a: true, cat: "化學科普" },
+        { q: "北極熊的皮膚顏色在厚重的白色毛髮下呈現粉紅色？", a: false, cat: "自然生態" },
+        { q: "馬里亞納海溝是目前地球已知最深的海溝？", a: true, cat: "海洋地質" },
+        { q: "植物進行光合作用時，釋放出的氧氣主要來自二氧化碳的分解？", a: false, cat: "生物科學" }
+      ],
+      english: [
+        { q: "英文單字「Receipt」（收據）中的字母 'p' 通常不發音？", a: true, cat: "實用英文" },
+        { q: "單字「Information」在標準英文文法中是可數名詞，可加 s？", a: false, cat: "英文文法" },
+        { q: "句子「Everyone have their own opinion.」動詞文法正確？", a: false, cat: "英文文法" },
+        { q: "「Unique」在修辭學上已有絕對意涵，傳統不建議加 very 修飾？", a: true, cat: "英文修辭" },
+        { q: "單字「Island」（島嶼）中的字母 's' 在發音時需要唸出來？", a: false, cat: "實用英文" },
+        { q: "英文句子「I look forward to hearing from you.」文法正確？", a: true, cat: "英文文法" },
+        { q: "字根「tele-」（如 telephone, telescope）代表「遠距離」之意？", a: true, cat: "英文單字" },
+        { q: "縮寫「e.g.」源自拉丁文，其英文對應含義為「例如（for example）」？", a: true, cat: "英文縮寫" },
+        { q: "縮寫「i.e.」在英文書寫中的意思是「換句話說（that is）」？", a: true, cat: "英文縮寫" },
+        { q: "「Lend」與「Borrow」在英文中意思完全相同，可任意互換主詞？", a: false, cat: "英文單字" },
+        { q: "「News」（新聞/消息）在英文文法中作為主詞時視為單數名詞？", a: true, cat: "英文文法" },
+        { q: "單字「Doubt」中的字母 'b' 在標準發音中需要清晰唸出？", a: false, cat: "實用英文" },
+        { q: "在形容天氣很冷時，「It's freezing outside.」使用正確？", a: true, cat: "實用英文" },
+        { q: "單字「Salmon」（鮭魚）中的字母 'l' 在英美發音中均不發音？", a: true, cat: "實用英文" },
+        { q: "句子「She told to me the secret.」完全符合及物動詞文法？", a: false, cat: "英文文法" },
+        { q: "「Affect」通常做動詞（影響），「Effect」多做名詞（效果）？", a: true, cat: "英文單字" },
+        { q: "單字「Luggage」（行李）在標準英文用法中可以加上 -s 形成複數？", a: false, cat: "英文文法" },
+        { q: "形容詞「Interested」常用於形容事物本質令人感到有趣？", a: false, cat: "英文單字" },
+        { q: "單字「Debt」（債務）中的字母 'b' 為發音字母？", a: false, cat: "實用英文" },
+        { q: "片語「Neither you nor I」後方若接現在式 be 動詞，應搭配 am？", a: true, cat: "英文文法" },
+        { q: "「Complement」與「Compliment」在英文拼法與字義上完全相同？", a: false, cat: "英文單字" },
+        { q: "單字「Subtle」（微妙的）中的字母 'b' 通常不發音？", a: true, cat: "實用英文" },
+        { q: "「Advice」是名詞，「Advise」通常是動詞？", a: true, cat: "英文單字" },
+        { q: "句子「I have been to Japan twice.」表示說話者目前正在日本境內？", a: false, cat: "英文文法" },
+        { q: "字首「un-」、「in-」、「im-」在構詞學中多數帶有否定意涵？", a: true, cat: "英文單字" }
+      ],
+      math: [
+        { q: "數字 1 既是質數（Prime number）也是合數？", a: false, cat: "基礎數學" },
+        { q: "任何實數的 0 次方（零除外）其結果皆恆等於 1？", a: true, cat: "基礎數學" },
+        { q: "直角三角形中，兩股長若為 3 與 4，則斜邊長度必為 5？", a: true, cat: "幾何數學" },
+        { q: "連續投擲一枚公正硬幣 5 次正面，第 6 次出現反面的機率大於 50%？", a: false, cat: "機率邏輯" },
+        { q: "所有的正方形在幾何定義上都屬於矩形（長方形）？", a: true, cat: "幾何數學" },
+        { q: "圓周率（π）是一個可以化為兩個整數相除（分數）的有限小數？", a: false, cat: "基礎數學" },
+        { q: "兩個負數在進行乘法運算時，其相乘結果必為正數？", a: true, cat: "基礎數學" },
+        { q: "「若 A 則 B」的逆否命題（Contrapositive）為「若非 B 則非 A」？", a: true, cat: "邏輯思維" },
+        { q: "數字 0 屬於偶數（Even number）？", a: true, cat: "基礎數學" },
+        { q: "三角形的三個內角角度相加，在平面幾何中恆等於 180 度？", a: true, cat: "幾何數學" },
+        { q: "方程式 x^2 = 9 在實數範圍內唯一的解是 x = 3？", a: false, cat: "代數運算" },
+        { q: "若甲比乙高，且乙比丙高，則甲必然比丙高？", a: true, cat: "邏輯思維" },
+        { q: "一個正八面體（Regular octahedron）總共有 8 個頂點？", a: false, cat: "幾何數學" },
+        { q: "自然數 2 是唯一的偶數質數？", a: true, cat: "基礎數學" },
+        { q: "一個數若能同時被 2 與 3 整除，則此數必能被 6 整除？", a: true, cat: "基礎數學" },
+        { q: "在常規運算中，除以 0 的算式運算結果等於無限大（∞）？", a: false, cat: "代數運算" },
+        { q: "若一組數據中加入一個極端大值，其平均數與中位數皆會大幅上升？", a: false, cat: "統計邏輯" },
+        { q: "菱形的四條邊長度相等，且其兩條對角線互相垂直平分？", a: true, cat: "幾何數學" },
+        { q: "「所有天鵝皆為白色」的否定命題是「所有天鵝皆非白色」？", a: false, cat: "邏輯思維" },
+        { q: "平面上兩條相異直線若互相平行，則它們在該平面上永不相交？", a: true, cat: "幾何數學" },
+        { q: "將球體的半徑放大為原本的 2 倍，其表面積會擴大為原本的 8 倍？", a: false, cat: "幾何數學" },
+        { q: "若事件 A 與事件 B 互斥，則 A 與 B 同時發生的機率為 0？", a: true, cat: "機率邏輯" },
+        { q: "任意多邊形的外角和（每個頂點取一個外角）恆等於 360 度？", a: true, cat: "幾何數學" },
+        { q: "數字 91 是一個質數？", a: false, cat: "基礎數學" },
+        { q: "對數運算中，log(A × B) 可以拆解為 log(A) + log(B)？", a: true, cat: "代數運算" }
+      ]
+    };
+
+    const GAME_QUESTION_COUNT = 5;  // 每局 5 題
+    const TIME_LIMIT_SECONDS = 10;  // 10 秒限時倒數
+    const HOLD_DURATION_MS = 1200;  // 1.2 秒蓄力防抖
+    const CONFIDENCE_THRESHOLD = 0.80; // 信心度 80% 門檻
+
+    // 遊戲狀態機
+    let activeQuestions = [];
+    let currentQIdx = 0;
+    let score = 0;
+    let combo = 0;
+    let remainingTime = TIME_LIMIT_SECONDS;
+    let timerInterval = null;
+    let nextQuestionTimeout = null;
+
+    // 系統狀態
+    let model = null;
+    let webcam = null;
+    let animFrameId = null;
+    let isRunning = false;
+    let isLocked = false; // 狀態閘
+
+    // 手勢蓄力追蹤
+    let currentHoldingGesture = null;
+    let holdStartTime = 0;
+
+    // DOM 元素快取
+    const modelUrlInput = document.getElementById('modelUrl');
+    const categorySelect = document.getElementById('categorySelect');
+    const loadBtn = document.getElementById('loadBtn');
+    const stopBtn = document.getElementById('stopBtn');
+    const webcamContainer = document.getElementById('webcamContainer');
+    const camPlaceholder = document.getElementById('camPlaceholder');
+    const scoreEl = document.getElementById('scoreEl');
+    const comboEl = document.getElementById('comboEl');
+    const timerEl = document.getElementById('timerEl');
+    const timerBar = document.getElementById('timerBar');
+    const qCategoryEl = document.getElementById('qCategory');
+    const qNumberEl = document.getElementById('qNumber');
+    const qTextEl = document.getElementById('qText');
+    const statusMsgEl = document.getElementById('statusMsg');
+    const progressBar = document.getElementById('progressBar');
+    const badgeGood = document.getElementById('badgeGood');
+    const badgeDefault = document.getElementById('badgeDefault');
+    const badgeBad = document.getElementById('badgeBad');
+
+    function formatModelUrl(rawUrl) {
+      let url = rawUrl.trim();
+      if (!url.endsWith('/')) url += '/';
+      return url;
+    }
+
+    // 依分類彙整題庫並使用 Fisher-Yates 洗牌抽取 5 題
+    function prepareQuestions(catKey) {
+      let pool = [];
+      if (catKey === 'all') {
+        pool = [...QUESTION_BANK.life, ...QUESTION_BANK.science, ...QUESTION_BANK.english, ...QUESTION_BANK.math];
+      } else {
+        pool = [...(QUESTION_BANK[catKey] || QUESTION_BANK.life)];
+      }
+
+      for (let i = pool.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [pool[i], pool[j]] = [pool[j], pool[i]];
+      }
+      return pool.slice(0, GAME_QUESTION_COUNT);
+    }
+
+    async function initModelAndCamera() {
+      stopCamera();
+
+      const baseUrl = formatModelUrl(modelUrlInput.value);
+      const modelJsonUrl = baseUrl + "model.json";
+      const metadataJsonUrl = baseUrl + "metadata.json";
+
+      statusMsgEl.textContent = "載入模型中，請允許鏡頭權限...";
+      loadBtn.disabled = true;
+
+      try {
+        model = await tmImage.load(modelJsonUrl, metadataJsonUrl);
+
+        const size = 260;
+        const flip = true;
+        webcam = new tmImage.Webcam(size, size, flip);
+        await webcam.setup();
+        await webcam.play();
+
+        webcamContainer.innerHTML = '';
+        webcamContainer.appendChild(webcam.canvas);
+
+        isRunning = true;
+        stopBtn.disabled = false;
+        startNewGame();
+        loop();
+      } catch (err) {
+        console.error("載入失敗：", err);
+        statusMsgEl.textContent = `啟動失敗: ${err.message || '請確認網址或鏡頭存取權限'}`;
+        loadBtn.disabled = false;
+        stopBtn.disabled = true;
+      }
+    }
+
+    // 徹底停止鏡頭與清除排程
+    function stopCamera() {
+      isRunning = false;
+
+      clearInterval(timerInterval);
+      timerInterval = null;
+      clearTimeout(nextQuestionTimeout);
+      nextQuestionTimeout = null;
+
+      if (animFrameId) {
+        cancelAnimationFrame(animFrameId);
+        animFrameId = null;
+      }
+
+      // 釋放底層 MediaStream 硬體占用
+      if (webcam) {
+        try {
+          if (webcam.webcam && webcam.webcam.srcObject) {
+            webcam.webcam.srcObject.getTracks().forEach(t => t.stop());
+          }
+          webcam.stop();
+        } catch (e) {
+          console.warn("釋放相機警告:", e);
+        }
+        webcam = null;
+      }
+
+      webcamContainer.innerHTML = '';
+      webcamContainer.appendChild(camPlaceholder);
+      camPlaceholder.textContent = "相機已安全關閉";
+
+      resetHold();
+      resetBadges();
+
+      loadBtn.disabled = false;
+      stopBtn.disabled = true;
+      isLocked = true;
+      statusMsgEl.textContent = "相機已停止。";
+    }
+
+    async function loop() {
+      if (!isRunning) return;
+
+      if (webcam) {
+        webcam.update();
+        await predict();
+      }
+
+      if (isRunning) {
+        animFrameId = window.requestAnimationFrame(loop);
+      }
+    }
+
+    async function predict() {
+      if (!model || !webcam || isLocked) return;
+
+      const prediction = await model.predict(webcam.canvas);
+      let pGood = 0, pBad = 0, pDefault = 0;
+
+      prediction.forEach(p => {
+        const name = p.className.toLowerCase();
+        if (name.includes('good')) pGood = p.probability;
+        else if (name.includes('bad')) pBad = p.probability;
+        else if (name.includes('default')) pDefault = p.probability;
+      });
+
+      renderBadges(pGood, pDefault, pBad);
+
+      let detectedGesture = null;
+      if (pGood >= CONFIDENCE_THRESHOLD) detectedGesture = 'good';
+      else if (pBad >= CONFIDENCE_THRESHOLD) detectedGesture = 'bad';
+
+      handleHoldDebounce(detectedGesture);
+    }
+
+    // 蓄力防抖邏輯
+    function handleHoldDebounce(gesture) {
+      if (!gesture) {
+        resetHold();
+        return;
+      }
+
+      const now = performance.now();
+      if (currentHoldingGesture !== gesture) {
+        currentHoldingGesture = gesture;
+        holdStartTime = now;
+        progressBar.className = `progress-bar progress-${gesture}`;
+      }
+
+      const elapsed = now - holdStartTime;
+      const pct = Math.min((elapsed / HOLD_DURATION_MS) * 100, 100);
+      progressBar.style.width = `${pct}%`;
+
+      const gestureName = gesture === 'good' ? '👍 正確 (Good)' : '👎 錯誤 (Bad)';
+      statusMsgEl.textContent = `偵測到 [${gestureName}]，請維持姿勢蓄力...`;
+
+      if (elapsed >= HOLD_DURATION_MS) {
+        const answer = (gesture === 'good');
+        commitAnswer(answer, false);
+        resetHold();
+      }
+    }
+
+    function resetHold() {
+      currentHoldingGesture = null;
+      holdStartTime = 0;
+      progressBar.style.width = '0%';
+      if (!isLocked && isRunning) {
+        statusMsgEl.textContent = "比出 👍(Good) 或 👎(Bad) 並維持 1.2 秒";
+      }
+    }
+
+    function renderBadges(good, def, bad) {
+      badgeGood.textContent = `Good: ${(good * 100).toFixed(0)}%`;
+      badgeDefault.textContent = `Default: ${(def * 100).toFixed(0)}%`;
+      badgeBad.textContent = `Bad: ${(bad * 100).toFixed(0)}%`;
+
+      badgeGood.className = 'badge' + (good >= CONFIDENCE_THRESHOLD ? ' active-good' : '');
+      badgeBad.className = 'badge' + (bad >= CONFIDENCE_THRESHOLD ? ' active-bad' : '');
+    }
+
+    function resetBadges() {
+      badgeGood.textContent = "Good: 0%";
+      badgeDefault.textContent = "Default: 0%";
+      badgeBad.textContent = "Bad: 0%";
+      badgeGood.className = 'badge';
+      badgeBad.className = 'badge';
+    }
+
+    // 開局
+    function startNewGame() {
+      const selectedCategory = categorySelect.value;
+      activeQuestions = prepareQuestions(selectedCategory);
+      currentQIdx = 0;
+      score = 0;
+      combo = 0;
+      updateStatsUI();
+      renderQuestion();
+    }
+
+    function updateStatsUI() {
+      scoreEl.textContent = score;
+      comboEl.textContent = combo > 1 ? `${combo}x 連勝!` : combo;
+    }
+
+    function renderQuestion() {
+      if (currentQIdx >= activeQuestions.length) {
+        finishGame();
+        return;
+      }
+
+      isLocked = false;
+      const q = activeQuestions[currentQIdx];
+      qCategoryEl.textContent = `類別: ${q.cat}`;
+      qNumberEl.textContent = `第 ${currentQIdx + 1} 題 / 共 ${GAME_QUESTION_COUNT} 題`;
+      qTextEl.textContent = q.q;
+      statusMsgEl.textContent = "比出 👍(Good) 或 👎(Bad) 並維持 1.2 秒作答";
+
+      startQuestionTimer();
+    }
+
+    function startQuestionTimer() {
+      clearInterval(timerInterval);
+      remainingTime = TIME_LIMIT_SECONDS;
+      updateTimerUI();
+
+      timerInterval = setInterval(() => {
+        remainingTime -= 0.1;
+
+        if (remainingTime <= 0) {
+          remainingTime = 0;
+          updateTimerUI();
+          clearInterval(timerInterval);
+          commitAnswer(null, true); // 超時
+        } else {
+          updateTimerUI();
+        }
+      }, 100);
+    }
+
+    function updateTimerUI() {
+      timerEl.textContent = `${Math.ceil(remainingTime)}s`;
+      const pct = (remainingTime / TIME_LIMIT_SECONDS) * 100;
+      timerBar.style.width = `${pct}%`;
+
+      if (remainingTime <= 3) {
+        timerBar.style.backgroundColor = 'var(--bad-color)';
+      } else if (remainingTime <= 5) {
+        timerBar.style.backgroundColor = 'var(--warning-color)';
+      } else {
+        timerBar.style.backgroundColor = 'var(--primary)';
+      }
+    }
+
+    // 結算作答
+    function commitAnswer(userAnswer, isTimeout = false) {
+      if (isLocked) return;
+      isLocked = true; // 狀態閘鎖死，防止連續觸發
+
+      clearInterval(timerInterval);
+      resetHold();
+
+      const q = activeQuestions[currentQIdx];
+
+      if (isTimeout) {
+        combo = 0;
+        updateStatsUI();
+        statusMsgEl.innerHTML = `<span style="color: var(--bad-color); font-weight: bold;">⏰ 時間到！</span> 正解為：${q.a ? '👍 正確 (Good)' : '👎 錯誤 (Bad)'}`;
+      } else {
+        const isCorrect = (userAnswer === q.a);
+
+        if (isCorrect) {
+          combo++;
+          const basePoint = 100;
+          const timeBonus = Math.floor(remainingTime) * 10;
+          const comboBonus = (combo - 1) * 50;
+          const totalEarned = basePoint + timeBonus + comboBonus;
+
+          score += totalEarned;
+          updateStatsUI();
+
+          let bonusText = `+${totalEarned} 分`;
+          if (combo > 1) bonusText += ` (含 ${combo} 連勝獎勵 +${comboBonus})`;
+          statusMsgEl.innerHTML = `<span style="color: var(--good-color); font-weight: bold;">🎉 回答正確！</span> ${bonusText}`;
+        } else {
+          combo = 0;
+          updateStatsUI();
+          const correctStr = q.a ? "👍 正確 (Good)" : "👎 錯誤 (Bad)";
+          statusMsgEl.innerHTML = `<span style="color: var(--bad-color); font-weight: bold;">❌ 回答錯誤！</span> 連勝中斷，正解為：${correctStr}`;
+        }
+      }
+
+      // 過場 2 秒後進入下一題
+      nextQuestionTimeout = setTimeout(() => {
+        if (!isRunning) return;
+        currentQIdx++;
+        renderQuestion();
+      }, 2000);
+    }
+
+    function finishGame() {
+      isLocked = true;
+      clearInterval(timerInterval);
+      qNumberEl.textContent = "5 題測驗完畢";
+      qTextEl.textContent = `挑戰完成！最終累計得分：${score} 分`;
+      statusMsgEl.textContent = "可再次點擊「啟動相機並開始遊戲」挑戰不同題型！";
+      progressBar.style.width = '0%';
+      timerBar.style.width = '0%';
+    }
+
+    loadBtn.addEventListener('click', initModelAndCamera);
+    stopBtn.addEventListener('click', stopCamera);
+  </script>
+</body>
+</html>
